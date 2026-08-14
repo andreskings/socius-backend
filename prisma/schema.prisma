@@ -25,7 +25,9 @@ model Candidato {
   id                          String        @id @default(cuid())
   nombre                      String
   apellido                    String
-  email                       String
+  email                       String        @unique
+  passwordHash                String
+  emailVerificado             Boolean       @default(false)
   telefono                    String?
   region                      String?
   disponibilidadPresencial    String?
@@ -35,6 +37,7 @@ model Candidato {
   cvNombreOriginal            String?
   fechaPostulacion            DateTime      @default(now())
   postulaciones               Postulacion[]
+  tokens                      VerificationToken[]
   createdAt                   DateTime      @default(now())
   updatedAt                   DateTime      @updatedAt
 }
@@ -48,4 +51,34 @@ model Postulacion {
   estado       String     @default("Nuevo")
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
+}
+
+enum RolUsuario {
+  ADMIN
+  RECLUTADOR
+}
+
+model Usuario {
+  id           String     @id @default(cuid())
+  nombre       String
+  email        String     @unique
+  passwordHash String
+  rol          RolUsuario
+  activo       Boolean    @default(true)
+  tokens       VerificationToken[]
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
+
+model VerificationToken {
+  id          String     @id @default(cuid())
+  token       String     @unique
+  tipo        String
+  candidatoId String?
+  usuarioId   String?
+  candidato   Candidato? @relation(fields: [candidatoId], references: [id], onDelete: Cascade)
+  usuario     Usuario?   @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime   @default(now())
 }

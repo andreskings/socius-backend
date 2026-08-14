@@ -1,20 +1,39 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
+import cookieParser from 'cookie-parser';
+import multer from 'multer';
+import authRouter from './routes/auth.js';
+import usuariosRouter from './routes/usuarios.js';
+import postulacionesRouter from './routes/postulaciones.js';
 import busquedasRouter from './routes/busquedas.js';
 import candidatosRouter from './routes/candidatos.js';
 
 const app = express();
 
-app.use(cors());
+app.use(helmet());
+app.use(
+  cors({
+    origin: process.env.FRONTEND_ORIGIN || 'http://localhost:3000',
+    credentials: true,
+  })
+);
 app.use(express.json());
+app.use(cookieParser());
 
 app.get('/health', (req, res) => res.json({ ok: true }));
 
+app.use('/auth', authRouter);
+app.use('/usuarios', usuariosRouter);
+app.use('/postulaciones', postulacionesRouter);
 app.use('/busquedas', busquedasRouter);
 app.use('/candidatos', candidatosRouter);
 
 app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError || /Solo se aceptan archivos/.test(err.message || '')) {
+    return res.status(400).json({ error: err.message });
+  }
   console.error(err);
   res.status(500).json({ error: err.message || 'Error interno' });
 });

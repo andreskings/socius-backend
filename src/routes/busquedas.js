@@ -1,5 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
+import { authenticate } from '../middleware/authenticate.js';
+import { requireRole } from '../middleware/authorize.js';
 
 const router = Router();
 
@@ -21,7 +23,7 @@ router.get('/', async (req, res) => {
   );
 });
 
-router.get('/:id', async (req, res) => {
+router.get('/:id', authenticate, requireRole('ADMIN', 'RECLUTADOR'), async (req, res) => {
   const busqueda = await prisma.busqueda.findUnique({
     where: { id: req.params.id },
     include: { postulaciones: { include: { candidato: true } } },
@@ -30,7 +32,7 @@ router.get('/:id', async (req, res) => {
   res.json(busqueda);
 });
 
-router.post('/', async (req, res) => {
+router.post('/', authenticate, requireRole('ADMIN', 'RECLUTADOR'), async (req, res) => {
   const { posicion, practica, prioridad, solicitante, descripcionCarga } = req.body;
   if (!posicion || !practica || !prioridad || !solicitante) {
     return res.status(400).json({ error: 'posicion, practica, prioridad y solicitante son requeridos' });
