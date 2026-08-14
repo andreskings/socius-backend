@@ -1,0 +1,51 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Busqueda {
+  id                 String        @id @default(cuid())
+  posicion           String
+  practica           String
+  prioridad          String
+  estado             String        @default("Activa")
+  fechaApertura      DateTime      @default(now())
+  solicitante        String
+  descripcionCarga   String?
+  postulaciones      Postulacion[]
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+}
+
+model Candidato {
+  id                          String        @id @default(cuid())
+  nombre                      String
+  apellido                    String
+  email                       String
+  telefono                    String?
+  region                      String?
+  disponibilidadPresencial    String?
+  experienciaRango             String?
+  mensaje                     String?
+  cvArchivo                   String?
+  cvNombreOriginal            String?
+  fechaPostulacion            DateTime      @default(now())
+  postulaciones               Postulacion[]
+  createdAt                   DateTime      @default(now())
+  updatedAt                   DateTime      @updatedAt
+}
+
+model Postulacion {
+  id           String     @id @default(cuid())
+  candidato    Candidato  @relation(fields: [candidatoId], references: [id], onDelete: Cascade)
+  candidatoId  String
+  busqueda     Busqueda?  @relation(fields: [busquedaId], references: [id], onDelete: SetNull)
+  busquedaId   String?
+  estado       String     @default("Nuevo")
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+}
