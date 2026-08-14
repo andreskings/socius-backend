@@ -11,6 +11,10 @@ export const cvUpload = multer({
   }),
   limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
+    // busboy decode los nombres de archivo multipart como latin1 por defecto, pero
+    // los navegadores los mandan en UTF-8 — sin esto, cualquier tilde/ñ queda como
+    // mojibake ("VÃ­ctor" en vez de "Víctor") al guardarlo en la base de datos.
+    file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
     const ok = ['.pdf', '.doc', '.docx'].includes(path.extname(file.originalname).toLowerCase());
     cb(ok ? null : new Error('Solo se aceptan archivos PDF o Word'), ok);
   },
