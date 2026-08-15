@@ -8,17 +8,18 @@ datasource db {
 }
 
 model Busqueda {
-  id                 String        @id @default(cuid())
-  posicion           String
-  practica           String
-  prioridad          String
-  estado             String        @default("Activa")
-  fechaApertura      DateTime      @default(now())
-  solicitante        String
-  descripcionCarga   String?
-  postulaciones      Postulacion[]
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
+  id                   String        @id @default(cuid())
+  posicion             String
+  practica             String
+  prioridad            String
+  estado               String        @default("Activa")
+  fechaApertura        DateTime      @default(now())
+  solicitante          String
+  descripcionCarga     String?
+  postulaciones        Postulacion[]
+  candidatosSugeridos  Candidato[]   @relation("AnalisisIaSugerido")
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
 }
 
 model Candidato {
@@ -35,6 +36,11 @@ model Candidato {
   mensaje                     String?
   cvArchivo                   String?
   cvNombreOriginal            String?
+  analisisIaCargoSugeridoId   String?
+  analisisIaCargoSugerido     Busqueda?     @relation("AnalisisIaSugerido", fields: [analisisIaCargoSugeridoId], references: [id], onDelete: SetNull)
+  analisisIaPuntaje           Int?
+  analisisIaResumen           String?
+  analisisIaFecha             DateTime?
   fechaPostulacion            DateTime      @default(now())
   postulaciones               Postulacion[]
   tokens                      VerificationToken[]

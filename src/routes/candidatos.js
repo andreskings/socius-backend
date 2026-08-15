@@ -1,14 +1,30 @@
 import { Router } from 'express';
 import path from 'path';
 import fs from 'fs/promises';
+import rateLimit from 'express-rate-limit';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { requireRole, requireOwnCandidatoOrStaff } from '../middleware/authorize.js';
 import { cvUpload } from '../lib/upload.js';
 import { validateUploadedFile } from '../lib/fileValidation.js';
+import { extraerTextoCv } from '../lib/extractText.js';
+import { analizarCv } from '../lib/groq.js';
 import { logEvent } from '../lib/logger.js';
 
 const router = Router();
+
+const INCLUDE_COMPLETO = {
+  postulaciones: { include: { busqueda: true } },
+  analisisIaCargoSugerido: true,
+};
+
+const analisisLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Demasiados análisis en poco tiempo. Probá de nuevo más tarde.' },
+});
 
 function serialize(candidato) {
   const postulacion = candidato.postulaciones?.[0] ?? null;
@@ -28,6 +44,15 @@ function serialize(candidato) {
     fechaPostulacion: candidato.fechaPostulacion,
     cargo: postulacion?.busqueda?.posicion ?? null,
     busquedaId: postulacion?.busquedaId ?? null,
+    analisisIa: candidato.analisisIaFecha
+      ? {
+          cargoSugerido: candidato.analisisIaCargoSugerido?.posicion ?? null,
+          busquedaSugeridaId: candidato.analisisIaCargoSugeridoId ?? null,
+          puntaje: candidato.analisisIaPuntaje,
+          resumen: candidato.analisisIaResumen,
+          fecha: candidato.analisisIaFecha,
+        }
+      : null,
   };
 }
 
@@ -49,7 +74,7 @@ router.get('/', requireRole('ADMIN', 'RECLUTADOR'), async (req, res) => {
       ...(busquedaId && { postulaciones: { some: { busquedaId } } }),
     },
     orderBy: { createdAt: 'desc' },
-    include: { postulaciones: { include: { busqueda: true } } },
+    include: INCLUDE_COMPLETO,
   });
   res.json(candidatos.map(serialize));
 });
@@ -58,7 +83,7 @@ router.get('/me', async (req, res) => {
   if (req.user.tipo !== 'candidato') return res.status(403).json({ error: 'Solo para candidatos' });
   const candidato = await prisma.candidato.findUnique({
     where: { id: req.user.id },
-    include: { postulaciones: { include: { busqueda: true } } },
+    include: INCLUDE_COMPLETO,
   });
   res.json(serialize(candidato));
 });
@@ -69,7 +94,7 @@ router.patch('/me', async (req, res) => {
   const candidato = await prisma.candidato.update({
     where: { id: req.user.id },
     data: { telefono, region, disponibilidadPresencial, experienciaRango, mensaje },
-    include: { postulaciones: { include: { busqueda: true } } },
+    include: INCLUDE_COMPLETO,
   });
   res.json(serialize(candidato));
 });
@@ -86,7 +111,15 @@ router.put('/me/cv', cvUpload.single('cv'), async (req, res) => {
   const anterior = await prisma.candidato.findUnique({ where: { id: req.user.id } });
   const candidato = await prisma.candidato.update({
     where: { id: req.user.id },
-    data: { cvArchivo: req.file.filename, cvNombreOriginal: req.file.originalname },
+    data: {
+      cvArchivo: req.file.filename,
+      cvNombreOriginal: req.file.originalname,
+      // El CV cambió: cualquier análisis de IA anterior queda obsoleto.
+      analisisIaCargoSugeridoId: null,
+      analisisIaPuntaje: null,
+      analisisIaResumen: null,
+      analisisIaFecha: null,
+    },
   });
 
   if (anterior?.cvArchivo) {
@@ -99,7 +132,7 @@ router.put('/me/cv', cvUpload.single('cv'), async (req, res) => {
 router.get('/:id', requireOwnCandidatoOrStaff('id'), async (req, res) => {
   const candidato = await prisma.candidato.findUnique({
     where: { id: req.params.id },
-    include: { postulaciones: { include: { busqueda: true } } },
+    include: INCLUDE_COMPLETO,
   });
   if (!candidato) return res.status(404).json({ error: 'Candidato no encontrado' });
   res.json(serialize(candidato));
@@ -109,6 +142,54 @@ router.get('/:id/cv', requireOwnCandidatoOrStaff('id'), async (req, res) => {
   const candidato = await prisma.candidato.findUnique({ where: { id: req.params.id } });
   if (!candidato?.cvArchivo) return res.status(404).json({ error: 'CV no encontrado' });
   res.download(path.join('uploads', candidato.cvArchivo), candidato.cvNombreOriginal || candidato.cvArchivo);
+});
+
+// Analiza el CV del candidato con IA (Groq) y sugiere a qué búsqueda activa encaja
+// mejor. Es una sugerencia para que el staff revise, nunca un filtro automático
+// que descarte candidatos — ver 04-roles-permisos-login-candidatos.md.
+router.post('/:id/analizar-ia', analisisLimiter, requireRole('ADMIN', 'RECLUTADOR'), async (req, res) => {
+  const candidato = await prisma.candidato.findUnique({ where: { id: req.params.id } });
+  if (!candidato) return res.status(404).json({ error: 'Candidato no encontrado' });
+  if (!candidato.cvArchivo) return res.status(400).json({ error: 'Este candidato no tiene CV cargado' });
+
+  const cvTexto = await extraerTextoCv(path.join('uploads', candidato.cvArchivo)).catch(() => null);
+  if (cvTexto === null) {
+    return res.status(422).json({ error: 'No se pudo leer este formato de archivo para el análisis (solo PDF y DOCX)' });
+  }
+  if (!cvTexto.trim()) {
+    return res.status(422).json({ error: 'No se encontró texto legible en el CV' });
+  }
+
+  const busquedas = await prisma.busqueda.findMany({
+    where: { estado: 'Activa' },
+    select: { id: true, posicion: true, practica: true, descripcionCarga: true },
+  });
+
+  let resultado;
+  try {
+    resultado = await analizarCv({ cvTexto, busquedas });
+  } catch (err) {
+    return res.status(502).json({ error: `No se pudo completar el análisis: ${err.message}` });
+  }
+
+  const actualizado = await prisma.candidato.update({
+    where: { id: candidato.id },
+    data: {
+      analisisIaCargoSugeridoId: resultado.busquedaSugeridaId,
+      analisisIaPuntaje: resultado.puntaje,
+      analisisIaResumen: resultado.resumen,
+      analisisIaFecha: new Date(),
+    },
+    include: INCLUDE_COMPLETO,
+  });
+
+  logEvent('candidato.analizado_ia', {
+    candidatoId: candidato.id,
+    busquedaSugeridaId: resultado.busquedaSugeridaId,
+    puntaje: resultado.puntaje,
+    analizadoPor: req.user.id,
+  });
+  res.json(serialize(actualizado));
 });
 
 // Eliminar una cuenta de candidato: solo ADMIN (un reclutador no puede borrar
