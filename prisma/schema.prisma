@@ -39,6 +39,7 @@ model Candidato {
   analisisIaCargoSugeridoId   String?
   analisisIaCargoSugerido     Busqueda?     @relation("AnalisisIaSugerido", fields: [analisisIaCargoSugeridoId], references: [id], onDelete: SetNull)
   analisisIaPuntaje           Int?
+  analisisIaVeredicto         String?
   analisisIaResumen           String?
   analisisIaFecha             DateTime?
   fechaPostulacion            DateTime      @default(now())

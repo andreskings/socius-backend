@@ -49,6 +49,7 @@ function serialize(candidato) {
           cargoSugerido: candidato.analisisIaCargoSugerido?.posicion ?? null,
           busquedaSugeridaId: candidato.analisisIaCargoSugeridoId ?? null,
           puntaje: candidato.analisisIaPuntaje,
+          veredicto: candidato.analisisIaVeredicto,
           resumen: candidato.analisisIaResumen,
           fecha: candidato.analisisIaFecha,
         }
@@ -117,6 +118,7 @@ router.put('/me/cv', cvUpload.single('cv'), async (req, res) => {
       // El CV cambió: cualquier análisis de IA anterior queda obsoleto.
       analisisIaCargoSugeridoId: null,
       analisisIaPuntaje: null,
+      analisisIaVeredicto: null,
       analisisIaResumen: null,
       analisisIaFecha: null,
     },
@@ -177,6 +179,7 @@ router.post('/:id/analizar-ia', analisisLimiter, requireRole('ADMIN', 'RECLUTADO
     data: {
       analisisIaCargoSugeridoId: resultado.busquedaSugeridaId,
       analisisIaPuntaje: resultado.puntaje,
+      analisisIaVeredicto: resultado.veredicto,
       analisisIaResumen: resultado.resumen,
       analisisIaFecha: new Date(),
     },
@@ -187,6 +190,7 @@ router.post('/:id/analizar-ia', analisisLimiter, requireRole('ADMIN', 'RECLUTADO
     candidatoId: candidato.id,
     busquedaSugeridaId: resultado.busquedaSugeridaId,
     puntaje: resultado.puntaje,
+    veredicto: resultado.veredicto,
     analizadoPor: req.user.id,
   });
   res.json(serialize(actualizado));
