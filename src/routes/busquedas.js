@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { requireRole } from '../middleware/authorize.js';
+import { CANDIDATO_PUBLICO } from '../lib/selects.js';
 
 const router = Router();
 
@@ -26,7 +27,7 @@ router.get('/', async (req, res) => {
 router.get('/:id', authenticate, requireRole('ADMIN', 'RECLUTADOR'), async (req, res) => {
   const busqueda = await prisma.busqueda.findUnique({
     where: { id: req.params.id },
-    include: { postulaciones: { include: { candidato: true } } },
+    include: { postulaciones: { include: { candidato: CANDIDATO_PUBLICO } } },
   });
   if (!busqueda) return res.status(404).json({ error: 'Búsqueda no encontrada' });
   res.json(busqueda);
