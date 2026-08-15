@@ -14,6 +14,8 @@ import {
 import { logEvent } from '../lib/logger.js';
 import { cvUpload } from '../lib/upload.js';
 import { validateUploadedFile } from '../lib/fileValidation.js';
+import { authenticate } from '../middleware/authenticate.js';
+import { requireCandidato } from '../middleware/authorize.js';
 import fs from 'fs/promises';
 
 const router = Router();
@@ -21,6 +23,13 @@ const router = Router();
 // Hash dummy para comparar contra él cuando el usuario/candidato no existe, así el
 // tiempo de respuesta no delata si el correo está registrado (mitiga enumeración).
 const DUMMY_HASH = '$2a$12$CwTycUXWue0Thq9StjUM0uJ8i6ZgFB6RkQqSf6/1E8VqM7lz9hJm2';
+
+// No hay SMTP en este entorno: en vez de enviar un correo real, el link de
+// verificación se devuelve directo en la respuesta (además de loguearse) mientras
+// no estemos en producción. Sin esto, el link solo queda en la consola del backend,
+// que en muchos entornos (ej. corriendo como proceso en segundo plano) nadie ve.
+const esProduccion = process.env.NODE_ENV === 'production';
+const frontendOrigin = () => process.env.FRONTEND_ORIGIN || 'http://localhost:3000';
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -101,13 +110,10 @@ router.post('/candidato/registro', registerLimiter, cvUpload.single('cv'), async
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
     },
   });
+  const linkVerificacion = `${frontendOrigin()}/candidato/verificar-email?token=${rawToken}`;
   // No hay SMTP configurado en este entorno: se loguea el link en vez de enviarlo
   // por correo real. El mecanismo de token/expiración/un-solo-uso sí es real.
-  logEvent('candidato.registro', {
-    candidatoId: candidato.id,
-    email,
-    linkVerificacion: `${process.env.FRONTEND_ORIGIN || 'http://localhost:3000'}/candidato/verificar-email?token=${rawToken}`,
-  });
+  logEvent('candidato.registro', { candidatoId: candidato.id, email, linkVerificacion });
 
   const jwtToken = signToken({ id: candidato.id, tipo: 'candidato' });
   setAuthCookie(res, jwtToken);
@@ -117,7 +123,31 @@ router.post('/candidato/registro', registerLimiter, cvUpload.single('cv'), async
     apellido: candidato.apellido,
     email: candidato.email,
     emailVerificado: false,
+    ...(esProduccion ? {} : { devVerificationUrl: linkVerificacion }),
   });
+});
+
+// Genera un nuevo link de verificación para la cuenta ya logueada (perdiste el
+// anterior, expiró, o nunca lo viste porque no hay email real en este entorno).
+router.post('/candidato/reenviar-verificacion', authenticate, requireCandidato, async (req, res) => {
+  const candidato = await prisma.candidato.findUnique({ where: { id: req.user.id } });
+  if (candidato.emailVerificado) {
+    return res.status(400).json({ error: 'Ese correo ya está verificado' });
+  }
+
+  const rawToken = generateRawToken();
+  await prisma.verificationToken.create({
+    data: {
+      token: rawToken,
+      tipo: 'verificacion_email',
+      candidatoId: candidato.id,
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    },
+  });
+  const linkVerificacion = `${frontendOrigin()}/candidato/verificar-email?token=${rawToken}`;
+  logEvent('candidato.verificacion_reenviada', { candidatoId: candidato.id, linkVerificacion });
+
+  res.json({ ok: true, ...(esProduccion ? {} : { devVerificationUrl: linkVerificacion }) });
 });
 
 router.post('/candidato/verificar-email', async (req, res) => {
@@ -236,6 +266,9 @@ router.post('/forgot-password', loginLimiter, async (req, res) => {
       : await prisma.candidato.findUnique({ where: { email } });
 
   // Respuesta idéntica exista o no la cuenta, para no permitir enumeración de correos.
+  // devResetUrl solo se agrega si la cuenta existe Y no estamos en producción, así
+  // que su presencia/ausencia en la respuesta no delata si el correo está registrado.
+  let devResetUrl;
   if (cuenta) {
     const rawToken = generateRawToken();
     await prisma.verificationToken.create({
@@ -248,14 +281,12 @@ router.post('/forgot-password', loginLimiter, async (req, res) => {
       },
     });
     const resetPath = actor === 'usuario' ? '/login' : '/candidato/login';
-    logEvent('password.reset_solicitado', {
-      actor,
-      email,
-      linkReset: `${process.env.FRONTEND_ORIGIN || 'http://localhost:3000'}${resetPath}?resetToken=${rawToken}`,
-    });
+    const linkReset = `${frontendOrigin()}${resetPath}?resetToken=${rawToken}`;
+    logEvent('password.reset_solicitado', { actor, email, linkReset });
+    if (!esProduccion) devResetUrl = linkReset;
   }
 
-  res.json({ ok: true, mensaje: 'Si el correo existe, vas a recibir instrucciones para restablecer tu contraseña.' });
+  res.json({ ok: true, mensaje: 'Si el correo existe, vas a recibir instrucciones para restablecer tu contraseña.', devResetUrl });
 });
 
 router.post('/reset-password', async (req, res) => {
