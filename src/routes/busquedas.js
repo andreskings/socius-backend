@@ -3,6 +3,7 @@ import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { requireRole } from '../middleware/authorize.js';
 import { CANDIDATO_PUBLICO } from '../lib/selects.js';
+import { logEvent } from '../lib/logger.js';
 
 const router = Router();
 
@@ -42,6 +43,18 @@ router.post('/', authenticate, requireRole('ADMIN', 'RECLUTADOR'), async (req, r
     data: { posicion, practica, prioridad, solicitante, descripcionCarga },
   });
   res.status(201).json(busqueda);
+});
+
+// Elimina una búsqueda. Las postulaciones asociadas no se borran: por el schema
+// (onDelete: SetNull) quedan con busquedaId = null, es decir, caen a la "base de
+// talentos" en vez de perderse.
+router.delete('/:id', authenticate, requireRole('ADMIN', 'RECLUTADOR'), async (req, res) => {
+  const busqueda = await prisma.busqueda.findUnique({ where: { id: req.params.id } });
+  if (!busqueda) return res.status(404).json({ error: 'Búsqueda no encontrada' });
+
+  await prisma.busqueda.delete({ where: { id: req.params.id } });
+  logEvent('busqueda.eliminada', { busquedaId: busqueda.id, posicion: busqueda.posicion, eliminadaPor: req.user.id });
+  res.json({ ok: true });
 });
 
 export default router;

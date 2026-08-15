@@ -111,4 +111,20 @@ router.get('/:id/cv', requireOwnCandidatoOrStaff('id'), async (req, res) => {
   res.download(path.join('uploads', candidato.cvArchivo), candidato.cvNombreOriginal || candidato.cvArchivo);
 });
 
+// Eliminar una cuenta de candidato: solo ADMIN (un reclutador no puede borrar
+// candidatos directamente, ver 04-roles-permisos-login-candidatos.md sección 3).
+// Borra también el CV del disco y, en cascada por el schema, sus postulaciones
+// y tokens de verificación.
+router.delete('/:id', requireRole('ADMIN'), async (req, res) => {
+  const candidato = await prisma.candidato.findUnique({ where: { id: req.params.id } });
+  if (!candidato) return res.status(404).json({ error: 'Candidato no encontrado' });
+
+  await prisma.candidato.delete({ where: { id: req.params.id } });
+  if (candidato.cvArchivo) {
+    await fs.unlink(path.join('uploads', candidato.cvArchivo)).catch(() => {});
+  }
+  logEvent('candidato.eliminado', { candidatoId: candidato.id, eliminadoPor: req.user.id });
+  res.json({ ok: true });
+});
+
 export default router;
