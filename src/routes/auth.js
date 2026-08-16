@@ -12,6 +12,7 @@ import {
   verifyJwt,
 } from '../lib/auth.js';
 import { logEvent } from '../lib/logger.js';
+import { enviarEmail, plantillaVerificacion, plantillaReset } from '../lib/mailer.js';
 import { cvUpload } from '../lib/upload.js';
 import { validateUploadedFile } from '../lib/fileValidation.js';
 import { authenticate } from '../middleware/authenticate.js';
@@ -24,10 +25,9 @@ const router = Router();
 // tiempo de respuesta no delata si el correo está registrado (mitiga enumeración).
 const DUMMY_HASH = '$2a$12$CwTycUXWue0Thq9StjUM0uJ8i6ZgFB6RkQqSf6/1E8VqM7lz9hJm2';
 
-// No hay SMTP en este entorno: en vez de enviar un correo real, el link de
-// verificación se devuelve directo en la respuesta (además de loguearse) mientras
-// no estemos en producción. Sin esto, el link solo queda en la consola del backend,
-// que en muchos entornos (ej. corriendo como proceso en segundo plano) nadie ve.
+// Si SMTP está configurado (ver lib/mailer.js) se manda el correo real. Si no,
+// mientras no estemos en producción el link se devuelve igual en la respuesta
+// para no bloquear el desarrollo local sin credenciales de correo.
 const esProduccion = process.env.NODE_ENV === 'production';
 const frontendOrigin = () => process.env.FRONTEND_ORIGIN || 'http://localhost:3000';
 
@@ -111,9 +111,12 @@ router.post('/candidato/registro', registerLimiter, cvUpload.single('cv'), async
     },
   });
   const linkVerificacion = `${frontendOrigin()}/candidato/verificar-email?token=${rawToken}`;
-  // No hay SMTP configurado en este entorno: se loguea el link en vez de enviarlo
-  // por correo real. El mecanismo de token/expiración/un-solo-uso sí es real.
-  logEvent('candidato.registro', { candidatoId: candidato.id, email, linkVerificacion });
+  const enviado = await enviarEmail({
+    to: email,
+    subject: 'Verificá tu correo — SOCIUS',
+    html: plantillaVerificacion(nombre, linkVerificacion),
+  });
+  logEvent('candidato.registro', { candidatoId: candidato.id, email, linkVerificacion, enviado });
 
   const jwtToken = signToken({ id: candidato.id, tipo: 'candidato' });
   setAuthCookie(res, jwtToken);
@@ -123,7 +126,7 @@ router.post('/candidato/registro', registerLimiter, cvUpload.single('cv'), async
     apellido: candidato.apellido,
     email: candidato.email,
     emailVerificado: false,
-    ...(esProduccion ? {} : { devVerificationUrl: linkVerificacion }),
+    ...(esProduccion || enviado ? {} : { devVerificationUrl: linkVerificacion }),
   });
 });
 
@@ -145,9 +148,14 @@ router.post('/candidato/reenviar-verificacion', authenticate, requireCandidato, 
     },
   });
   const linkVerificacion = `${frontendOrigin()}/candidato/verificar-email?token=${rawToken}`;
-  logEvent('candidato.verificacion_reenviada', { candidatoId: candidato.id, linkVerificacion });
+  const enviado = await enviarEmail({
+    to: candidato.email,
+    subject: 'Verificá tu correo — SOCIUS',
+    html: plantillaVerificacion(candidato.nombre, linkVerificacion),
+  });
+  logEvent('candidato.verificacion_reenviada', { candidatoId: candidato.id, linkVerificacion, enviado });
 
-  res.json({ ok: true, ...(esProduccion ? {} : { devVerificationUrl: linkVerificacion }) });
+  res.json({ ok: true, ...(esProduccion || enviado ? {} : { devVerificationUrl: linkVerificacion }) });
 });
 
 router.post('/candidato/verificar-email', async (req, res) => {
@@ -266,8 +274,8 @@ router.post('/forgot-password', loginLimiter, async (req, res) => {
       : await prisma.candidato.findUnique({ where: { email } });
 
   // Respuesta idéntica exista o no la cuenta, para no permitir enumeración de correos.
-  // devResetUrl solo se agrega si la cuenta existe Y no estamos en producción, así
-  // que su presencia/ausencia en la respuesta no delata si el correo está registrado.
+  // devResetUrl solo se agrega si la cuenta existe Y no se pudo enviar el correo real,
+  // así que su presencia/ausencia en la respuesta no delata si el correo está registrado.
   let devResetUrl;
   if (cuenta) {
     const rawToken = generateRawToken();
@@ -280,10 +288,11 @@ router.post('/forgot-password', loginLimiter, async (req, res) => {
         expiresAt: new Date(Date.now() + 60 * 60 * 1000),
       },
     });
-    const resetPath = actor === 'usuario' ? '/login' : '/candidato/login';
+    const resetPath = actor === 'usuario' ? '/login/restablecer' : '/candidato/restablecer';
     const linkReset = `${frontendOrigin()}${resetPath}?resetToken=${rawToken}`;
-    logEvent('password.reset_solicitado', { actor, email, linkReset });
-    if (!esProduccion) devResetUrl = linkReset;
+    const enviado = await enviarEmail({ to: email, subject: 'Restablecé tu contraseña — SOCIUS', html: plantillaReset(linkReset) });
+    logEvent('password.reset_solicitado', { actor, email, linkReset, enviado });
+    if (!esProduccion && !enviado) devResetUrl = linkReset;
   }
 
   res.json({ ok: true, mensaje: 'Si el correo existe, vas a recibir instrucciones para restablecer tu contraseña.', devResetUrl });
