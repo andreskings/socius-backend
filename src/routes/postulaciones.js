@@ -4,6 +4,9 @@ import { authenticate } from '../middleware/authenticate.js';
 import { requireCandidato, requireRole } from '../middleware/authorize.js';
 import { logEvent } from '../lib/logger.js';
 import { CANDIDATO_PUBLICO } from '../lib/selects.js';
+import { enviarEmail, plantillaEntrevista, plantillaRechazo } from '../lib/mailer.js';
+
+const frontendOrigin = () => process.env.FRONTEND_ORIGIN || 'http://localhost:3000';
 
 export const ESTADOS_POSTULACION = ['Nuevo', 'En revisión', 'Entrevista', 'Contratado', 'Rechazado'];
 
@@ -63,23 +66,50 @@ router.post('/', requireCandidato, async (req, res) => {
 });
 
 // Cambiar el estado de una postulación (pipeline). Solo staff.
+// Al pasar a "Entrevista" hace falta fechaEntrevista (obligatoria, se lo pide el
+// modal del pipeline en el frontend antes de llamar acá). "mensaje" es un texto
+// libre opcional que el reclutador puede agregar, se incluye en el correo si hay.
+// El envío de correo es best-effort: si falla, la postulación igual queda
+// actualizada — no tiene sentido bloquear el cambio de estado por un problema de
+// email, se informa vía "emailEnviado" en la respuesta.
 router.patch('/:id', requireRole('ADMIN', 'RECLUTADOR'), async (req, res) => {
-  const { estado } = req.body;
+  const { estado, fechaEntrevista, mensaje } = req.body;
   if (!ESTADOS_POSTULACION.includes(estado)) {
     return res.status(400).json({ error: `estado debe ser uno de: ${ESTADOS_POSTULACION.join(', ')}` });
+  }
+  if (estado === 'Entrevista' && !fechaEntrevista) {
+    return res.status(400).json({ error: 'fechaEntrevista es requerida para pasar a Entrevista' });
   }
 
   const postulacion = await prisma.postulacion
     .update({
       where: { id: req.params.id },
-      data: { estado },
+      data: {
+        estado,
+        ...(estado === 'Entrevista' && { fechaEntrevista: new Date(fechaEntrevista) }),
+      },
       include: { busqueda: true, candidato: CANDIDATO_PUBLICO },
     })
     .catch(() => null);
   if (!postulacion) return res.status(404).json({ error: 'Postulación no encontrada' });
 
   logEvent('postulacion.estado_cambiado', { postulacionId: postulacion.id, estado, cambiadoPor: req.user.id });
-  res.json(postulacion);
+
+  let emailEnviado = null;
+  if (estado === 'Entrevista' || estado === 'Rechazado') {
+    const nombreCompleto = postulacion.candidato.nombre;
+    const posicion = postulacion.busqueda?.posicion || null;
+    const linkPortal = `${frontendOrigin()}/candidato/portal`;
+    const html =
+      estado === 'Entrevista'
+        ? plantillaEntrevista({ nombre: nombreCompleto, posicion, fecha: postulacion.fechaEntrevista, mensaje, linkPortal })
+        : plantillaRechazo({ nombre: nombreCompleto, posicion, mensaje, linkPortal });
+    const subject = estado === 'Entrevista' ? 'Te esperamos en tu entrevista — SOCIUS' : 'Novedades sobre tu postulación — SOCIUS';
+    emailEnviado = await enviarEmail({ to: postulacion.candidato.email, subject, html });
+    logEvent('postulacion.notificacion_email', { postulacionId: postulacion.id, estado, emailEnviado });
+  }
+
+  res.json({ ...postulacion, emailEnviado });
 });
 
 export default router;

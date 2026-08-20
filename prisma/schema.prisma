@@ -50,14 +50,15 @@ model Candidato {
 }
 
 model Postulacion {
-  id           String     @id @default(cuid())
-  candidato    Candidato  @relation(fields: [candidatoId], references: [id], onDelete: Cascade)
-  candidatoId  String
-  busqueda     Busqueda?  @relation(fields: [busquedaId], references: [id], onDelete: SetNull)
-  busquedaId   String?
-  estado       String     @default("Nuevo")
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
+  id               String     @id @default(cuid())
+  candidato        Candidato  @relation(fields: [candidatoId], references: [id], onDelete: Cascade)
+  candidatoId      String
+  busqueda         Busqueda?  @relation(fields: [busquedaId], references: [id], onDelete: SetNull)
+  busquedaId       String?
+  estado           String     @default("Nuevo")
+  fechaEntrevista  DateTime?
+  createdAt        DateTime   @default(now())
+  updatedAt        DateTime   @updatedAt
 }
 
 enum RolUsuario {
