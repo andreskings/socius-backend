@@ -126,7 +126,11 @@ router.post('/candidato/registro', registerLimiter, cvUpload.single('cv'), async
     apellido: candidato.apellido,
     email: candidato.email,
     emailVerificado: false,
-    ...(esProduccion || enviado ? {} : { devVerificationUrl: linkVerificacion }),
+    // Fuera de producción se manda igual el link de verificación en la respuesta,
+    // aunque el correo real se haya enviado bien: mientras el sitio no está
+    // desplegado públicamente, sirve como botón de prueba rápido sin tener que
+    // ir a revisar el correo cada vez.
+    ...(esProduccion ? {} : { devVerificationUrl: linkVerificacion }),
   });
 });
 
@@ -155,7 +159,7 @@ router.post('/candidato/reenviar-verificacion', authenticate, requireCandidato, 
   });
   logEvent('candidato.verificacion_reenviada', { candidatoId: candidato.id, linkVerificacion, enviado });
 
-  res.json({ ok: true, ...(esProduccion || enviado ? {} : { devVerificationUrl: linkVerificacion }) });
+  res.json({ ok: true, ...(esProduccion ? {} : { devVerificationUrl: linkVerificacion }) });
 });
 
 router.post('/candidato/verificar-email', async (req, res) => {
