@@ -17,6 +17,7 @@ import { cvUpload } from '../lib/upload.js';
 import { validateUploadedFile } from '../lib/fileValidation.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { requireCandidato } from '../middleware/authorize.js';
+import { issueCsrfCookie, clearCsrfCookie } from '../lib/csrf.js';
 import fs from 'fs/promises';
 
 const router = Router();
@@ -120,6 +121,7 @@ router.post('/candidato/registro', registerLimiter, cvUpload.single('cv'), async
 
   const jwtToken = signToken({ id: candidato.id, tipo: 'candidato' });
   setAuthCookie(res, jwtToken);
+  issueCsrfCookie(res);
   res.status(201).json({
     id: candidato.id,
     nombre: candidato.nombre,
@@ -199,6 +201,7 @@ router.post('/candidato/login', loginLimiter, async (req, res) => {
 
   const jwtToken = signToken({ id: candidato.id, tipo: 'candidato' });
   setAuthCookie(res, jwtToken);
+  issueCsrfCookie(res);
   logEvent('candidato.login_ok', { candidatoId: candidato.id });
   res.json({
     id: candidato.id,
@@ -225,6 +228,7 @@ router.post('/staff/login', loginLimiter, async (req, res) => {
 
   const jwtToken = signToken({ id: usuario.id, tipo: 'usuario', rol: usuario.rol });
   setAuthCookie(res, jwtToken);
+  issueCsrfCookie(res);
   logEvent('usuario.login_ok', { usuarioId: usuario.id, rol: usuario.rol });
   res.json({ id: usuario.id, nombre: usuario.nombre, email: usuario.email, rol: usuario.rol });
 });
@@ -233,6 +237,7 @@ router.post('/staff/login', loginLimiter, async (req, res) => {
 
 router.post('/logout', (req, res) => {
   clearAuthCookie(res);
+  clearCsrfCookie(res);
   res.json({ ok: true });
 });
 
