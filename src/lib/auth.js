@@ -27,17 +27,24 @@ export function verifyJwt(token) {
   return jwt.verify(token, JWT_SECRET);
 }
 
-export function setAuthCookie(res, token) {
-  res.cookie(TOKEN_COOKIE, token, {
+function cookieOptions() {
+  const production = process.env.NODE_ENV === 'production';
+  // En producción front y back viven en dominios distintos (Vercel / Railway),
+  // así que la cookie necesita sameSite 'none' para viajar cross-site — eso a su
+  // vez exige 'secure', que en dev rompería el login por http://localhost.
+  return {
     httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-    maxAge: 2 * 60 * 60 * 1000,
-  });
+    sameSite: production ? 'none' : 'lax',
+    secure: production,
+  };
+}
+
+export function setAuthCookie(res, token) {
+  res.cookie(TOKEN_COOKIE, token, { ...cookieOptions(), maxAge: 2 * 60 * 60 * 1000 });
 }
 
 export function clearAuthCookie(res) {
-  res.clearCookie(TOKEN_COOKIE);
+  res.clearCookie(TOKEN_COOKIE, cookieOptions());
 }
 
 export function readAuthCookie(req) {
