@@ -1,4 +1,4 @@
-const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
 
 const VEREDICTOS_VALIDOS = ['Cumple los requisitos', 'Cumple parcialmente', 'No cumple los requisitos'];
 
