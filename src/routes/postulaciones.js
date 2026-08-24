@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { requireCandidato, requireRole } from '../middleware/authorize.js';
+import { validate } from '../middleware/validate.js';
+import { postularSchema, estadoPostulacionSchema } from '../lib/schemas.js';
 import { logEvent } from '../lib/logger.js';
 import { CANDIDATO_PUBLICO } from '../lib/selects.js';
 import { enviarEmail, plantillaEntrevista, plantillaRechazo } from '../lib/mailer.js';
@@ -9,6 +11,7 @@ import { enviarEmail, plantillaEntrevista, plantillaRechazo } from '../lib/maile
 const frontendOrigin = () => process.env.FRONTEND_ORIGIN || 'http://localhost:3000';
 
 export const ESTADOS_POSTULACION = ['Nuevo', 'En revisión', 'Entrevista', 'Contratado', 'Rechazado'];
+const cambiarEstadoSchema = estadoPostulacionSchema(ESTADOS_POSTULACION);
 
 const router = Router();
 
@@ -40,7 +43,7 @@ router.get('/mias', requireCandidato, async (req, res) => {
 // Postularse a una búsqueda (o a la base de talentos si no se envía busquedaId).
 // candidatoId sale SIEMPRE del token, nunca del body: evita que un candidato
 // autenticado cree postulaciones a nombre de otro candidato (IDOR).
-router.post('/', requireCandidato, async (req, res) => {
+router.post('/', requireCandidato, validate(postularSchema), async (req, res) => {
   const candidato = await prisma.candidato.findUnique({ where: { id: req.user.id } });
   if (!candidato.emailVerificado) {
     return res.status(403).json({ error: 'Tenés que verificar tu correo antes de postular' });
@@ -72,14 +75,8 @@ router.post('/', requireCandidato, async (req, res) => {
 // El envío de correo es best-effort: si falla, la postulación igual queda
 // actualizada — no tiene sentido bloquear el cambio de estado por un problema de
 // email, se informa vía "emailEnviado" en la respuesta.
-router.patch('/:id', requireRole('ADMIN', 'RECLUTADOR'), async (req, res) => {
+router.patch('/:id', requireRole('ADMIN', 'RECLUTADOR'), validate(cambiarEstadoSchema), async (req, res) => {
   const { estado, fechaEntrevista, mensaje } = req.body;
-  if (!ESTADOS_POSTULACION.includes(estado)) {
-    return res.status(400).json({ error: `estado debe ser uno de: ${ESTADOS_POSTULACION.join(', ')}` });
-  }
-  if (estado === 'Entrevista' && !fechaEntrevista) {
-    return res.status(400).json({ error: 'fechaEntrevista es requerida para pasar a Entrevista' });
-  }
 
   const postulacion = await prisma.postulacion
     .update({

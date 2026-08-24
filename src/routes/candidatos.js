@@ -5,6 +5,8 @@ import rateLimit from 'express-rate-limit';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { requireRole, requireOwnCandidatoOrStaff } from '../middleware/authorize.js';
+import { validate } from '../middleware/validate.js';
+import { actualizarPerfilCandidatoSchema } from '../lib/schemas.js';
 import { cvUpload } from '../lib/upload.js';
 import { validateUploadedFile } from '../lib/fileValidation.js';
 import { extraerTextoCv } from '../lib/extractText.js';
@@ -89,7 +91,7 @@ router.get('/me', async (req, res) => {
   res.json(serialize(candidato));
 });
 
-router.patch('/me', async (req, res) => {
+router.patch('/me', validate(actualizarPerfilCandidatoSchema), async (req, res) => {
   if (req.user.tipo !== 'candidato') return res.status(403).json({ error: 'Solo para candidatos' });
   const { telefono, region, disponibilidadPresencial, experienciaRango, mensaje } = req.body;
   const candidato = await prisma.candidato.update({

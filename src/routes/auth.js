@@ -17,7 +17,9 @@ import { cvUpload } from '../lib/upload.js';
 import { validateUploadedFile } from '../lib/fileValidation.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { requireCandidato } from '../middleware/authorize.js';
+import { validate } from '../middleware/validate.js';
 import { issueCsrfCookie, clearCsrfCookie } from '../lib/csrf.js';
+import { registroCandidatoSchema, forgotPasswordSchema, resetPasswordSchema } from '../lib/schemas.js';
 import fs from 'fs/promises';
 
 const router = Router();
@@ -53,6 +55,11 @@ const GENERIC_LOGIN_ERROR = { error: 'Credenciales inválidas' };
 // ---------- Candidato ----------
 
 router.post('/candidato/registro', registerLimiter, cvUpload.single('cv'), async (req, res) => {
+  const parsed = registroCandidatoSchema.safeParse(req.body);
+  if (!parsed.success) {
+    if (req.file) await fs.unlink(req.file.path).catch(() => {});
+    return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
   const {
     nombre,
     apellido,
@@ -63,16 +70,7 @@ router.post('/candidato/registro', registerLimiter, cvUpload.single('cv'), async
     disponibilidadPresencial,
     experienciaRango,
     mensaje,
-  } = req.body;
-
-  if (!nombre || !apellido || !email || !password) {
-    if (req.file) await fs.unlink(req.file.path).catch(() => {});
-    return res.status(400).json({ error: 'nombre, apellido, email y password son requeridos' });
-  }
-  if (password.length < 8) {
-    if (req.file) await fs.unlink(req.file.path).catch(() => {});
-    return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
-  }
+  } = parsed.data;
 
   const existente = await prisma.candidato.findUnique({ where: { email } });
   if (existente) {
@@ -271,11 +269,8 @@ router.get('/me', async (req, res) => {
 });
 
 // actor: 'candidato' | 'usuario'
-router.post('/forgot-password', loginLimiter, async (req, res) => {
+router.post('/forgot-password', loginLimiter, validate(forgotPasswordSchema), async (req, res) => {
   const { email, actor } = req.body;
-  if (!email || !['candidato', 'usuario'].includes(actor)) {
-    return res.status(400).json({ error: 'email y actor son requeridos' });
-  }
 
   const cuenta =
     actor === 'usuario'
@@ -307,10 +302,8 @@ router.post('/forgot-password', loginLimiter, async (req, res) => {
   res.json({ ok: true, mensaje: 'Si el correo existe, vas a recibir instrucciones para restablecer tu contraseña.', devResetUrl });
 });
 
-router.post('/reset-password', async (req, res) => {
+router.post('/reset-password', validate(resetPasswordSchema), async (req, res) => {
   const { token, password } = req.body;
-  if (!token || !password) return res.status(400).json({ error: 'token y password son requeridos' });
-  if (password.length < 8) return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
 
   const record = await prisma.verificationToken.findUnique({ where: { token } });
   if (!record || record.tipo !== 'reset_password' || record.usedAt || record.expiresAt < new Date()) {

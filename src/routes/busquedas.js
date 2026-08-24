@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { prisma } from '../lib/prisma.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { requireRole } from '../middleware/authorize.js';
+import { validate } from '../middleware/validate.js';
+import { crearBusquedaSchema } from '../lib/schemas.js';
 import { CANDIDATO_PUBLICO } from '../lib/selects.js';
 import { logEvent } from '../lib/logger.js';
 
@@ -34,11 +36,8 @@ router.get('/:id', authenticate, requireRole('ADMIN', 'RECLUTADOR'), async (req,
   res.json(busqueda);
 });
 
-router.post('/', authenticate, requireRole('ADMIN', 'RECLUTADOR'), async (req, res) => {
+router.post('/', authenticate, requireRole('ADMIN', 'RECLUTADOR'), validate(crearBusquedaSchema), async (req, res) => {
   const { posicion, practica, prioridad, solicitante, descripcionCarga } = req.body;
-  if (!posicion || !practica || !prioridad || !solicitante) {
-    return res.status(400).json({ error: 'posicion, practica, prioridad y solicitante son requeridos' });
-  }
   const busqueda = await prisma.busqueda.create({
     data: { posicion, practica, prioridad, solicitante, descripcionCarga },
   });

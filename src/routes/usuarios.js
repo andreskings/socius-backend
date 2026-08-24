@@ -3,6 +3,8 @@ import { prisma } from '../lib/prisma.js';
 import { hashPassword } from '../lib/auth.js';
 import { authenticate } from '../middleware/authenticate.js';
 import { requireRole } from '../middleware/authorize.js';
+import { validate } from '../middleware/validate.js';
+import { crearUsuarioSchema, editarUsuarioSchema } from '../lib/schemas.js';
 import { logEvent } from '../lib/logger.js';
 
 const router = Router();
@@ -25,14 +27,8 @@ router.get('/', async (req, res) => {
   res.json(usuarios.map(serialize));
 });
 
-router.post('/', async (req, res) => {
+router.post('/', validate(crearUsuarioSchema), async (req, res) => {
   const { nombre, email, password, rol } = req.body;
-  if (!nombre || !email || !password || !['ADMIN', 'RECLUTADOR'].includes(rol)) {
-    return res.status(400).json({ error: 'nombre, email, password y rol (ADMIN|RECLUTADOR) son requeridos' });
-  }
-  if (password.length < 8) {
-    return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
-  }
   const existente = await prisma.usuario.findUnique({ where: { email } });
   if (existente) return res.status(409).json({ error: 'Ya existe un usuario con ese correo' });
 
@@ -42,19 +38,13 @@ router.post('/', async (req, res) => {
   res.status(201).json(serialize(usuario));
 });
 
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', validate(editarUsuarioSchema), async (req, res) => {
   const { nombre, rol, activo, password } = req.body;
   const data = {};
   if (nombre !== undefined) data.nombre = nombre;
-  if (rol !== undefined) {
-    if (!['ADMIN', 'RECLUTADOR'].includes(rol)) return res.status(400).json({ error: 'rol inválido' });
-    data.rol = rol;
-  }
-  if (activo !== undefined) data.activo = Boolean(activo);
-  if (password) {
-    if (password.length < 8) return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
-    data.passwordHash = await hashPassword(password);
-  }
+  if (rol !== undefined) data.rol = rol;
+  if (activo !== undefined) data.activo = activo;
+  if (password) data.passwordHash = await hashPassword(password);
 
   const usuario = await prisma.usuario.update({ where: { id: req.params.id }, data }).catch(() => null);
   if (!usuario) return res.status(404).json({ error: 'Usuario no encontrado' });
