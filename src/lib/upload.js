@@ -1,5 +1,10 @@
 import multer from 'multer';
 import path from 'path';
+import fs from 'fs';
+
+// multer no crea la carpeta destino sola, y uploads/ no está en el repo (.gitignore)
+// — sin esto, la primera subida en cualquier entorno nuevo (deploy limpio) falla.
+fs.mkdirSync('uploads', { recursive: true });
 
 export const cvUpload = multer({
   storage: multer.diskStorage({
