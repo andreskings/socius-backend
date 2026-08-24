@@ -250,6 +250,11 @@ router.get('/me', async (req, res) => {
     return res.status(401).json({ error: 'Sesión inválida o expirada' });
   }
 
+  // Sesiones que iniciaron antes de agregar CSRF tienen el cookie de auth pero
+  // nunca recibieron el de CSRF (solo se emite en login) — se autorepara acá,
+  // que es lo primero que pega el frontend al cargar la app.
+  if (!req.cookies?.csrfToken) issueCsrfCookie(res);
+
   if (payload.tipo === 'usuario') {
     const usuario = await prisma.usuario.findUnique({ where: { id: payload.id } });
     if (!usuario || !usuario.activo) return res.status(401).json({ error: 'Sesión inválida' });
