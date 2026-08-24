@@ -187,7 +187,8 @@ router.post('/candidato/verificar-email', async (req, res) => {
 });
 
 router.post('/candidato/login', loginLimiter, async (req, res) => {
-  const { email, password } = req.body;
+  const { password } = req.body;
+  const email = req.body.email?.trim().toLowerCase();
   if (!email || !password) return res.status(400).json(GENERIC_LOGIN_ERROR);
 
   const candidato = await prisma.candidato.findUnique({ where: { email } });
@@ -215,7 +216,8 @@ router.post('/candidato/login', loginLimiter, async (req, res) => {
 // ---------- Staff (Admin / Reclutador) ----------
 
 router.post('/staff/login', loginLimiter, async (req, res) => {
-  const { email, password } = req.body;
+  const { password } = req.body;
+  const email = req.body.email?.trim().toLowerCase();
   if (!email || !password) return res.status(400).json(GENERIC_LOGIN_ERROR);
 
   const usuario = await prisma.usuario.findUnique({ where: { email } });

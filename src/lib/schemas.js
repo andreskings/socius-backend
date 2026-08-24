@@ -2,11 +2,14 @@ import { z } from 'zod';
 
 const textoOpcional = (max) => z.string().trim().max(max).optional().or(z.literal(''));
 const password = z.string().min(8, 'La contraseña debe tener al menos 8 caracteres').max(200);
+// Postgres compara "=" con distinción de mayúsculas: sin normalizar acá,
+// "Test@Gmail.com" y "test@gmail.com" quedarían como cuentas distintas.
+const email = z.string().trim().toLowerCase().email('email inválido').max(200);
 
 export const registroCandidatoSchema = z.object({
   nombre: z.string().trim().min(1, 'nombre es requerido').max(100),
   apellido: z.string().trim().min(1, 'apellido es requerido').max(100),
-  email: z.string().trim().email('email inválido').max(200),
+  email,
   password,
   telefono: textoOpcional(30),
   region: textoOpcional(100),
@@ -16,7 +19,7 @@ export const registroCandidatoSchema = z.object({
 });
 
 export const forgotPasswordSchema = z.object({
-  email: z.string().trim().email('email inválido'),
+  email,
   actor: z.enum(['candidato', 'usuario']),
 });
 
@@ -35,7 +38,7 @@ export const crearBusquedaSchema = z.object({
 
 export const crearUsuarioSchema = z.object({
   nombre: z.string().trim().min(1, 'nombre es requerido').max(100),
-  email: z.string().trim().email('email inválido').max(200),
+  email,
   password,
   rol: z.enum(['ADMIN', 'RECLUTADOR']),
 });
