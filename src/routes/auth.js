@@ -119,13 +119,14 @@ router.post('/candidato/registro', registerLimiter, cvUpload.single('cv'), async
 
   const jwtToken = signToken({ id: candidato.id, tipo: 'candidato' });
   setAuthCookie(res, jwtToken);
-  issueCsrfCookie(res);
+  const csrfToken = issueCsrfCookie(res);
   res.status(201).json({
     id: candidato.id,
     nombre: candidato.nombre,
     apellido: candidato.apellido,
     email: candidato.email,
     emailVerificado: false,
+    csrfToken,
     // Fuera de producción se manda igual el link de verificación en la respuesta,
     // aunque el correo real se haya enviado bien: mientras el sitio no está
     // desplegado públicamente, sirve como botón de prueba rápido sin tener que
@@ -199,7 +200,7 @@ router.post('/candidato/login', loginLimiter, async (req, res) => {
 
   const jwtToken = signToken({ id: candidato.id, tipo: 'candidato' });
   setAuthCookie(res, jwtToken);
-  issueCsrfCookie(res);
+  const csrfToken = issueCsrfCookie(res);
   logEvent('candidato.login_ok', { candidatoId: candidato.id }, req);
   res.json({
     id: candidato.id,
@@ -207,6 +208,7 @@ router.post('/candidato/login', loginLimiter, async (req, res) => {
     apellido: candidato.apellido,
     email: candidato.email,
     emailVerificado: candidato.emailVerificado,
+    csrfToken,
   });
 });
 
@@ -226,9 +228,9 @@ router.post('/staff/login', loginLimiter, async (req, res) => {
 
   const jwtToken = signToken({ id: usuario.id, tipo: 'usuario', rol: usuario.rol });
   setAuthCookie(res, jwtToken);
-  issueCsrfCookie(res);
+  const csrfToken = issueCsrfCookie(res);
   logEvent('usuario.login_ok', { usuarioId: usuario.id, rol: usuario.rol }, req);
-  res.json({ id: usuario.id, nombre: usuario.nombre, email: usuario.email, rol: usuario.rol });
+  res.json({ id: usuario.id, nombre: usuario.nombre, email: usuario.email, rol: usuario.rol, csrfToken });
 });
 
 // ---------- Comunes ----------
@@ -250,15 +252,16 @@ router.get('/me', async (req, res) => {
     return res.status(401).json({ error: 'Sesión inválida o expirada' });
   }
 
-  // Sesiones que iniciaron antes de agregar CSRF tienen el cookie de auth pero
-  // nunca recibieron el de CSRF (solo se emite en login) — se autorepara acá,
-  // que es lo primero que pega el frontend al cargar la app.
-  if (!req.cookies?.csrfToken) issueCsrfCookie(res);
+  // El frontend no puede leer la cookie CSRF con document.cookie (vive en el
+  // dominio del backend, no el del frontend) — se la devolvemos en el body de
+  // /me, que es lo primero que pega el frontend al cargar la app. Si la sesión
+  // es de antes de agregar CSRF, tampoco tiene la cookie todavía: se emite acá.
+  const csrfToken = req.cookies?.csrfToken || issueCsrfCookie(res);
 
   if (payload.tipo === 'usuario') {
     const usuario = await prisma.usuario.findUnique({ where: { id: payload.id } });
     if (!usuario || !usuario.activo) return res.status(401).json({ error: 'Sesión inválida' });
-    return res.json({ tipo: 'usuario', id: usuario.id, nombre: usuario.nombre, email: usuario.email, rol: usuario.rol });
+    return res.json({ tipo: 'usuario', id: usuario.id, nombre: usuario.nombre, email: usuario.email, rol: usuario.rol, csrfToken });
   }
 
   const candidato = await prisma.candidato.findUnique({ where: { id: payload.id } });
@@ -270,6 +273,7 @@ router.get('/me', async (req, res) => {
     apellido: candidato.apellido,
     email: candidato.email,
     emailVerificado: candidato.emailVerificado,
+    csrfToken,
   });
 });
 
