@@ -78,12 +78,18 @@ export function plantillaReset(link) {
 }
 
 function fechaLegible(fecha) {
+  // El servidor corre en UTC (Railway) sin importar dónde esté el destinatario:
+  // hay que fijar el timezone real del negocio, si no toLocaleString usa el del
+  // proceso y el correo muestra una hora distinta a la que se ve en la app
+  // (que sí formatea con el timezone del navegador).
   return new Date(fecha).toLocaleString('es-CL', {
+    timeZone: 'America/Santiago',
     weekday: 'long',
     day: 'numeric',
     month: 'long',
     hour: '2-digit',
     minute: '2-digit',
+    hour12: false,
   });
 }
 
