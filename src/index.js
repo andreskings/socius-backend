@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import cookieParser from 'cookie-parser';
+import morgan from 'morgan';
 import multer from 'multer';
 import authRouter from './routes/auth.js';
 import usuariosRouter from './routes/usuarios.js';
@@ -12,6 +13,12 @@ import candidatosRouter from './routes/candidatos.js';
 
 const app = express();
 
+// Railway (y cualquier PaaS) pone el server detrás de un proxy: sin esto,
+// express-rate-limit y req.ip ven la IP del proxy en vez de la del cliente real
+// (rompe el rate limiting de fuerza bruta y falsea la IP en los logs).
+app.set('trust proxy', 1);
+
+app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use(helmet());
 app.use(
   cors({

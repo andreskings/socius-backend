@@ -117,7 +117,7 @@ router.post('/candidato/registro', registerLimiter, cvUpload.single('cv'), async
     subject: 'Verificá tu correo — SOCIUS',
     html: plantillaVerificacion(nombre, linkVerificacion),
   });
-  logEvent('candidato.registro', { candidatoId: candidato.id, email, linkVerificacion, enviado });
+  logEvent('candidato.registro', { candidatoId: candidato.id, email, linkVerificacion, enviado }, req);
 
   const jwtToken = signToken({ id: candidato.id, tipo: 'candidato' });
   setAuthCookie(res, jwtToken);
@@ -159,7 +159,7 @@ router.post('/candidato/reenviar-verificacion', authenticate, requireCandidato, 
     subject: 'Verificá tu correo — SOCIUS',
     html: plantillaVerificacion(candidato.nombre, linkVerificacion),
   });
-  logEvent('candidato.verificacion_reenviada', { candidatoId: candidato.id, linkVerificacion, enviado });
+  logEvent('candidato.verificacion_reenviada', { candidatoId: candidato.id, linkVerificacion, enviado }, req);
 
   res.json({ ok: true, ...(esProduccion ? {} : { devVerificationUrl: linkVerificacion }) });
 });
@@ -183,7 +183,7 @@ router.post('/candidato/verificar-email', async (req, res) => {
     prisma.candidato.update({ where: { id: record.candidatoId }, data: { emailVerificado: true } }),
     prisma.verificationToken.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
   ]);
-  logEvent('candidato.email_verificado', { candidatoId: record.candidatoId });
+  logEvent('candidato.email_verificado', { candidatoId: record.candidatoId }, req);
   res.json({ ok: true });
 });
 
@@ -195,14 +195,14 @@ router.post('/candidato/login', loginLimiter, async (req, res) => {
   const valid = await verifyPassword(password, candidato?.passwordHash ?? DUMMY_HASH);
 
   if (!candidato || !valid) {
-    logEvent('candidato.login_fallido', { email });
+    logEvent('candidato.login_fallido', { email }, req);
     return res.status(401).json(GENERIC_LOGIN_ERROR);
   }
 
   const jwtToken = signToken({ id: candidato.id, tipo: 'candidato' });
   setAuthCookie(res, jwtToken);
   issueCsrfCookie(res);
-  logEvent('candidato.login_ok', { candidatoId: candidato.id });
+  logEvent('candidato.login_ok', { candidatoId: candidato.id }, req);
   res.json({
     id: candidato.id,
     nombre: candidato.nombre,
@@ -222,14 +222,14 @@ router.post('/staff/login', loginLimiter, async (req, res) => {
   const valid = await verifyPassword(password, usuario?.passwordHash ?? DUMMY_HASH);
 
   if (!usuario || !valid || !usuario.activo) {
-    logEvent('usuario.login_fallido', { email });
+    logEvent('usuario.login_fallido', { email }, req);
     return res.status(401).json(GENERIC_LOGIN_ERROR);
   }
 
   const jwtToken = signToken({ id: usuario.id, tipo: 'usuario', rol: usuario.rol });
   setAuthCookie(res, jwtToken);
   issueCsrfCookie(res);
-  logEvent('usuario.login_ok', { usuarioId: usuario.id, rol: usuario.rol });
+  logEvent('usuario.login_ok', { usuarioId: usuario.id, rol: usuario.rol }, req);
   res.json({ id: usuario.id, nombre: usuario.nombre, email: usuario.email, rol: usuario.rol });
 });
 
@@ -300,7 +300,7 @@ router.post('/forgot-password', loginLimiter, async (req, res) => {
     const resetPath = actor === 'usuario' ? '/login/restablecer' : '/candidato/restablecer';
     const linkReset = `${frontendOrigin()}${resetPath}?resetToken=${rawToken}`;
     const enviado = await enviarEmail({ to: email, subject: 'Restablecé tu contraseña — SOCIUS', html: plantillaReset(linkReset) });
-    logEvent('password.reset_solicitado', { actor, email, linkReset, enviado });
+    logEvent('password.reset_solicitado', { actor, email, linkReset, enviado }, req);
     if (!esProduccion && !enviado) devResetUrl = linkReset;
   }
 
@@ -323,13 +323,13 @@ router.post('/reset-password', async (req, res) => {
       prisma.candidato.update({ where: { id: record.candidatoId }, data: { passwordHash } }),
       prisma.verificationToken.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
     ]);
-    logEvent('password.reset_aplicado', { actor: 'candidato', candidatoId: record.candidatoId });
+    logEvent('password.reset_aplicado', { actor: 'candidato', candidatoId: record.candidatoId }, req);
   } else if (record.usuarioId) {
     await prisma.$transaction([
       prisma.usuario.update({ where: { id: record.usuarioId }, data: { passwordHash } }),
       prisma.verificationToken.update({ where: { id: record.id }, data: { usedAt: new Date() } }),
     ]);
-    logEvent('password.reset_aplicado', { actor: 'usuario', usuarioId: record.usuarioId });
+    logEvent('password.reset_aplicado', { actor: 'usuario', usuarioId: record.usuarioId }, req);
   }
 
   res.json({ ok: true });
