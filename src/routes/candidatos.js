@@ -62,6 +62,9 @@ function serialize(candidato) {
 router.use(authenticate);
 
 // GET /candidatos?nombre=&region=&busquedaId=  — solo staff (expone PII de todos)
+// Un candidato rechazado en todas sus postulaciones ya no aparece acá — tiene su
+// propio lugar en la pestaña "Rechazados". Si tiene alguna postulación activa en
+// otra búsqueda, sigue apareciendo (el rechazo es por búsqueda, no por persona).
 router.get('/', requireRole('ADMIN', 'RECLUTADOR'), async (req, res) => {
   const { nombre, region, busquedaId } = req.query;
   const candidatos = await prisma.candidato.findMany({
@@ -75,6 +78,9 @@ router.get('/', requireRole('ADMIN', 'RECLUTADOR'), async (req, res) => {
       }),
       ...(region && { region }),
       ...(busquedaId && { postulaciones: { some: { busquedaId } } }),
+      NOT: {
+        AND: [{ postulaciones: { some: {} } }, { postulaciones: { every: { estado: 'Rechazado' } } }],
+      },
     },
     orderBy: { createdAt: 'desc' },
     include: INCLUDE_COMPLETO,
