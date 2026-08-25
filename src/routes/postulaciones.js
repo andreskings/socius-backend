@@ -84,6 +84,7 @@ router.patch('/:id', requireRole('ADMIN', 'RECLUTADOR'), validate(cambiarEstadoS
       data: {
         estado,
         ...(estado === 'Entrevista' && { fechaEntrevista: new Date(fechaEntrevista) }),
+        ...(estado === 'Rechazado' && { motivoRechazo: mensaje || null }),
       },
       include: { busqueda: true, candidato: CANDIDATO_PUBLICO },
     })

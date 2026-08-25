@@ -57,6 +57,7 @@ model Postulacion {
   busquedaId       String?
   estado           String     @default("Nuevo")
   fechaEntrevista  DateTime?
+  motivoRechazo    String?
   createdAt        DateTime   @default(now())
   updatedAt        DateTime   @updatedAt
 }
