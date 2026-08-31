@@ -76,13 +76,33 @@ router.post('/', requireCandidato, validate(postularSchema), async (req, res) =>
 // actualizada — no tiene sentido bloquear el cambio de estado por un problema de
 // email, se informa vía "emailEnviado" en la respuesta.
 router.patch('/:id', requireRole('ADMIN', 'RECLUTADOR'), validate(cambiarEstadoSchema), async (req, res) => {
-  const { estado, fechaEntrevista, mensaje } = req.body;
+  const { estado, fechaEntrevista, mensaje, busquedaId } = req.body;
+
+  // busquedaId permite reasignar una postulación (típicamente de la base de
+  // talentos, sin búsqueda, a una búsqueda puntual) desde el pipeline. Solo se
+  // toca si vino en el body: así los cambios de estado normales, que no mandan
+  // este campo, no tocan la asignación existente.
+  if (busquedaId !== undefined) {
+    const actual = await prisma.postulacion.findUnique({ where: { id: req.params.id } });
+    if (!actual) return res.status(404).json({ error: 'Postulación no encontrada' });
+
+    if (busquedaId) {
+      const busqueda = await prisma.busqueda.findUnique({ where: { id: busquedaId } });
+      if (!busqueda) return res.status(404).json({ error: 'Búsqueda no encontrada' });
+
+      const duplicado = await prisma.postulacion.findFirst({
+        where: { candidatoId: actual.candidatoId, busquedaId, NOT: { id: actual.id } },
+      });
+      if (duplicado) return res.status(409).json({ error: 'El candidato ya tiene una postulación a esa búsqueda' });
+    }
+  }
 
   const postulacion = await prisma.postulacion
     .update({
       where: { id: req.params.id },
       data: {
         estado,
+        ...(busquedaId !== undefined && { busquedaId: busquedaId || null }),
         ...(estado === 'Entrevista' && { fechaEntrevista: new Date(fechaEntrevista) }),
         ...(estado === 'Rechazado' && { motivoRechazo: mensaje || null }),
       },

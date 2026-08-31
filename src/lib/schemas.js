@@ -68,6 +68,7 @@ export function estadoPostulacionSchema(estados) {
       estado: z.enum(estados),
       fechaEntrevista: z.string().datetime().optional(),
       mensaje: textoOpcional(2000),
+      busquedaId: z.string().trim().min(1).optional().nullable(),
     })
     .refine((data) => data.estado !== 'Entrevista' || !!data.fechaEntrevista, {
       message: 'fechaEntrevista es requerida para pasar a Entrevista',
