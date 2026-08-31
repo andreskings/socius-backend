@@ -46,6 +46,8 @@ function serialize(candidato) {
     fechaPostulacion: candidato.fechaPostulacion,
     cargo: postulacion?.busqueda?.posicion ?? null,
     busquedaId: postulacion?.busquedaId ?? null,
+    postulacionId: postulacion?.id ?? null,
+    postulacionEstado: postulacion?.estado ?? null,
     analisisIa: candidato.analisisIaFecha
       ? {
           cargoSugerido: candidato.analisisIaCargoSugerido?.posicion ?? null,
